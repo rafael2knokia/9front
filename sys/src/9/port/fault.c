@@ -235,6 +235,13 @@ fixfault(Segment *s, uintptr addr, int read)
 			*pg = new;
 			/* s->used count unchanged */
 			putpage(old);
+			/*
+			 * The segment may be shared after a fork.  Replacing its
+			 * page updates every sibling's page table, but their TLBs
+			 * can still map old until explicitly flushed.
+			 */
+			if(s->ref > 1)
+				procflushseg(s);
 		}
 		/* wet floor */
 	case SG_STICKY:			/* Never paged out */
