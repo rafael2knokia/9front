@@ -207,8 +207,14 @@ sched(void)
 	if(up != m->readied)
 		m->schedticks = m->ticks + HZ/10;
 	m->readied = nil;
+	/*
+	 * Publish the process-to-machine association under runq so
+	 * procflushmmu cannot miss a process between dequeue and mmuswitch.
+	 */
+	lock(runq);
 	m->proc = up;
 	up->mach = MACHP(m->machno);
+	unlock(runq);
 	up->affinity = m->machno;
 	up->state = Running;
 	mmuswitch(up);
@@ -1481,7 +1487,7 @@ static void
 procflushmmu(int (*match)(Proc*, void*), void *a)
 {
 	Proc *await[MAXMACH];
-	int i, nm, nwait;
+	int i, nm, nwait, s;
 	Proc *p;
 
 	/*
@@ -1491,6 +1497,8 @@ procflushmmu(int (*match)(Proc*, void*), void *a)
 	nwait = 0;
 	for(i = 0; (p = proctab(i)) != nil; i++){
 		if(p->state > New && (*match)(p, a)){
+			s = splhi();
+			lock(runq);
 			p->newtlb = 1;
 			for(nm = 0; nm < conf.nmach; nm++){
 				if(MACHP(nm)->proc == p){
@@ -1501,6 +1509,8 @@ procflushmmu(int (*match)(Proc*, void*), void *a)
 					await[nm] = p;
 				}
 			}
+			unlock(runq);
+			splx(s);
 		}
 	}
 
